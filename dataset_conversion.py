@@ -1,35 +1,36 @@
 import os
 import math
+from tqdm import tqdm
 
-import itertools
-import logging
-import random
-from collections import defaultdict
-from dataclasses import dataclass
-from os.path import join
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+# import itertools
+# import logging
+# import random
+# from collections import defaultdict
+# from dataclasses import dataclass
+# from os.path import join
+# from pathlib import Path
+# from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import numpy.typing as npt
+# import numpy.typing as npt
 
-from nuplan.common.actor_state.vehicle_parameters import get_pacifica_parameters
-from nuplan.common.maps.nuplan_map.map_factory import NuPlanMapFactory, get_maps_db
-from nuplan.database.nuplan_db.nuplan_scenario_queries import (
-    get_lidarpc_token_map_name_from_db,
-    get_lidarpc_token_timestamp_from_db,
-    get_lidarpc_tokens_with_scenario_tag_from_db,
-)
-from nuplan.planning.nuboard.base.data_class import NuBoardFile, SimulationScenarioKey
-from nuplan.planning.nuboard.base.experiment_file_data import ExperimentFileData
-from nuplan.planning.nuboard.base.simulation_tile import SimulationTile
+# from nuplan.common.actor_state.vehicle_parameters import get_pacifica_parameters
+# from nuplan.common.maps.nuplan_map.map_factory import NuPlanMapFactory, get_maps_db
+# from nuplan.database.nuplan_db.nuplan_scenario_queries import (
+#     get_lidarpc_token_map_name_from_db,
+#     get_lidarpc_token_timestamp_from_db,
+#     get_lidarpc_tokens_with_scenario_tag_from_db,
+# )
+# from nuplan.planning.nuboard.base.data_class import NuBoardFile, SimulationScenarioKey
+# from nuplan.planning.nuboard.base.experiment_file_data import ExperimentFileData
+# from nuplan.planning.nuboard.base.simulation_tile import SimulationTile
 from nuplan.planning.scenario_builder.abstract_scenario import AbstractScenario
-from nuplan.planning.scenario_builder.nuplan_db.nuplan_scenario import NuPlanScenario
+# from nuplan.planning.scenario_builder.nuplan_db.nuplan_scenario import NuPlanScenario
 from nuplan.planning.scenario_builder.nuplan_db.nuplan_scenario_filter_utils import discover_log_dbs
-from nuplan.planning.scenario_builder.nuplan_db.nuplan_scenario_utils import (
-    DEFAULT_SCENARIO_NAME,
-    ScenarioExtractionInfo,
-)
+# from nuplan.planning.scenario_builder.nuplan_db.nuplan_scenario_utils import (
+#     DEFAULT_SCENARIO_NAME,
+#     ScenarioExtractionInfo,
+# )
 
 from tutorials.utils.tutorial_utils import get_scenario_type_token_map, get_default_scenario_from_token
 
@@ -109,7 +110,7 @@ def get_look_ahead_point_by_time(
     look_ahead_pt_y = ego_future_array[-1][1]
     look_ahead_pt_v = np.linalg.norm(np.asarray([ego_future_array[-1][3], ego_future_array[-1][4]]))
 
-    look_ahead_pt = np.ndarray(
+    look_ahead_pt = np.array(
         [look_ahead_pt_x, look_ahead_pt_y, look_ahead_pt_v]
     )
 
@@ -203,7 +204,7 @@ def construct_objects_current_state(
         idx_prev_obj = np.where(prev_token_array==track_token)[0].item() \
             if len(np.where(prev_token_array==track_token)[0]) != 0 else None
         idx_future_obj = np.where(future_token_array==track_token)[0].item() \
-            if len(np.where(prev_token_array==track_token)[0]) != 0 else None
+            if len(np.where(future_token_array==track_token)[0]) != 0 else None
 
         if idx_prev_obj == None or idx_future_obj == None:
             objects_current_info[i][5] = 0
@@ -223,11 +224,15 @@ def construct_objects_current_state(
 
     # slice or pad
     num_roi_objects = len(objects_current_info)
-    if num_roi_objects >= num_interested_obj:
+    num_features = objects_current_info.shape[1] if len(objects_current_info.shape) > 1 else 8
+    
+    num_pad_objects = num_interested_obj - num_roi_objects
+    if num_pad_objects == num_interested_obj:
+        objects_current_array = np.zeros((num_pad_objects, num_features))
+    elif num_pad_objects <= 0:
         objects_current_array = objects_current_info[0:num_interested_obj, :]
     else:
-        num_pad_objects = num_interested_obj - num_roi_objects
-        objects_virtual_info = np.zeros((num_pad_objects, objects_current_info.shape[1]))
+        objects_virtual_info = np.zeros((num_pad_objects, num_features))
         objects_current_array = np.concatenate((objects_current_info, objects_virtual_info), axis=0)
     
     return objects_current_array
@@ -242,29 +247,42 @@ def process(
 ) -> None:
     
     # get all scenarios
+    print('Getting all scenarios...')
     log_db_files = discover_log_dbs(db_files)
     scenario_type_token_map = get_scenario_type_token_map(log_db_files)
     scenario_type_list = sorted(scenario_type_token_map.keys())
 
     # loop for all scenario
-    for scenario_type in scenario_type_list:
-        os.makedirs('./dataset/' + scenario_type)
+    for scenario_type in tqdm(scenario_type_list, desc='Scenario progress: '):
         scenario_path = './dataset/' + scenario_type
+        if not os.path.exists(scenario_path):
+            os.makedirs(scenario_path)
 
         # loop for all dbs
-        for log_db_file, token in scenario_type_token_map[scenario_type]:
+        look_ahead_pt_dict = {}
+        # scenario_type = 'following_lane_without_lead' # debug
+        for log_db_file, token in tqdm(scenario_type_token_map[scenario_type], desc='Files progress for ' + scenario_type + ': '):
+            if os.path.exists(scenario_path + '/' + token + '.npy'):
+                continue
+            
             scenario = get_default_scenario_from_token(data_root, log_db_file, token, map_root, map_version)
 
             ego_state = construct_ego_current_state(scenario)
-            objects_state = construct_objects_current_state(scenario)
+            objects_state = construct_objects_current_state(scenario, ego_state, 1000, 10)
             ego_state = np.expand_dims(ego_state, axis=0)
             observation = np.concatenate((ego_state, objects_state), axis=0)
 
             # get look-ahead point
             look_ahead_pt = get_look_ahead_point_by_time(scenario, future_time_horizon)
+            look_ahead_pt_dict[token] = look_ahead_pt
 
-            # save file
+            # save input files
+            with open(scenario_path + '/' + token + '.npy', 'wb') as f:
+                np.save(f, observation)
 
+        # save ouput dict
+        with open(scenario_path + '/look_ahead_pt.npy', 'wb') as f:
+                np.save(f, look_ahead_pt_dict)
 
 if __name__ == '__main__':
 
