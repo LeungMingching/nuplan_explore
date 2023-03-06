@@ -1,38 +1,19 @@
 import os
-import math
 from tqdm import tqdm
 
-# import itertools
-# import logging
-# import random
-# from collections import defaultdict
-# from dataclasses import dataclass
-# from os.path import join
-# from pathlib import Path
-# from typing import Any, Dict, List, Optional, Tuple
-
 import numpy as np
-# import numpy.typing as npt
 
-# from nuplan.common.actor_state.vehicle_parameters import get_pacifica_parameters
-# from nuplan.common.maps.nuplan_map.map_factory import NuPlanMapFactory, get_maps_db
-# from nuplan.database.nuplan_db.nuplan_scenario_queries import (
-#     get_lidarpc_token_map_name_from_db,
-#     get_lidarpc_token_timestamp_from_db,
-#     get_lidarpc_tokens_with_scenario_tag_from_db,
-# )
-# from nuplan.planning.nuboard.base.data_class import NuBoardFile, SimulationScenarioKey
-# from nuplan.planning.nuboard.base.experiment_file_data import ExperimentFileData
-# from nuplan.planning.nuboard.base.simulation_tile import SimulationTile
 from nuplan.planning.scenario_builder.abstract_scenario import AbstractScenario
-# from nuplan.planning.scenario_builder.nuplan_db.nuplan_scenario import NuPlanScenario
 from nuplan.planning.scenario_builder.nuplan_db.nuplan_scenario_filter_utils import discover_log_dbs
-# from nuplan.planning.scenario_builder.nuplan_db.nuplan_scenario_utils import (
-#     DEFAULT_SCENARIO_NAME,
-#     ScenarioExtractionInfo,
-# )
 
 from tutorials.utils.tutorial_utils import get_scenario_type_token_map, get_default_scenario_from_token
+
+DATA_ROOT = '~/nuplan_explore/nuplan'
+MAP_ROOT = '~/nuplan_explore/nuplan/dataset/maps'
+DB_FILES = '~/nuplan_explore/nuplan/dataset/nuplan-v1.1/mini'
+MAP_VERSION = '~/nuplan_explore/nuplan-maps-v1.0'
+
+CONVERTED_ROOT = './converted_dataset/'
 
 def read_ego_past_states(
     scenario: AbstractScenario,
@@ -254,15 +235,18 @@ def process(
 
     # loop for all scenario
     for scenario_type in tqdm(scenario_type_list, desc='Scenario progress: '):
-        scenario_path = './dataset/' + scenario_type
+        scenario_path = CONVERTED_ROOT + scenario_type
         if not os.path.exists(scenario_path):
             os.makedirs(scenario_path)
+        
+        if os.path.exists(scenario_path + '/observation_array.npy') \
+            and os.path.exists(scenario_path + '/look_ahead_pt_array.npy'):
+            continue
 
         # loop for all dbs
         observation_list = []
         look_ahead_pt_list = []
-        # scenario_type = 'following_lane_without_lead' # debug
-        for log_db_file, token in tqdm(scenario_type_token_map[scenario_type], desc='Files progress for ' + scenario_type + ': '):
+        for log_db_file, token in tqdm(scenario_type_token_map[scenario_type], desc='Converting ' + scenario_type + ': '):
             # if os.path.exists(scenario_path + '/' + token + '.npy'):
             #     continue
             
@@ -291,19 +275,14 @@ def process(
 
 if __name__ == '__main__':
 
-    data_root = '/home/gac/nuplan_explore/nuplan'
-    map_root = '/home/gac/nuplan_explore/nuplan/dataset/maps'
-    db_files = '/home/gac/nuplan_explore/nuplan/dataset/nuplan-v1.1/mini'
-    map_version = '/home/gac/nuplan_explore/nuplan-maps-v1.0'
-
     past_time_horizon = 5
     future_time_horizon = 5
 
     process(
-        data_root,
-        map_root,
-        db_files,
-        map_version,
+        DATA_ROOT,
+        MAP_ROOT,
+        DB_FILES,
+        MAP_VERSION,
         past_time_horizon,
         future_time_horizon
     )

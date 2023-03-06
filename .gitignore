@@ -2,6 +2,7 @@
 .ipynb_checkpoints/
 
 dataset/
+converted_dataset/
 
 nuplan/
 nuplan-devkit/
