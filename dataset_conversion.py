@@ -259,11 +259,12 @@ def process(
             os.makedirs(scenario_path)
 
         # loop for all dbs
-        look_ahead_pt_dict = {}
+        observation_list = []
+        look_ahead_pt_list = []
         # scenario_type = 'following_lane_without_lead' # debug
         for log_db_file, token in tqdm(scenario_type_token_map[scenario_type], desc='Files progress for ' + scenario_type + ': '):
-            if os.path.exists(scenario_path + '/' + token + '.npy'):
-                continue
+            # if os.path.exists(scenario_path + '/' + token + '.npy'):
+            #     continue
             
             scenario = get_default_scenario_from_token(data_root, log_db_file, token, map_root, map_version)
 
@@ -271,18 +272,22 @@ def process(
             objects_state = construct_objects_current_state(scenario, ego_state, 1000, 10)
             ego_state = np.expand_dims(ego_state, axis=0)
             observation = np.concatenate((ego_state, objects_state), axis=0)
+            observation_list.append(observation)
 
             # get look-ahead point
             look_ahead_pt = get_look_ahead_point_by_time(scenario, future_time_horizon)
-            look_ahead_pt_dict[token] = look_ahead_pt
+            look_ahead_pt_list.append(look_ahead_pt)
 
-            # save input files
-            with open(scenario_path + '/' + token + '.npy', 'wb') as f:
-                np.save(f, observation)
+        observation_array = np.asarray(observation_list)
+        look_ahead_pt_array = np.asarray(look_ahead_pt_list)
+        
+        # save input files
+        with open(scenario_path + '/observation_array.npy', 'wb') as f:
+            np.save(f, observation_array)
 
         # save ouput dict
-        with open(scenario_path + '/look_ahead_pt.npy', 'wb') as f:
-                np.save(f, look_ahead_pt_dict)
+        with open(scenario_path + '/look_ahead_pt_array.npy', 'wb') as f:
+                np.save(f, look_ahead_pt_array)
 
 if __name__ == '__main__':
 
