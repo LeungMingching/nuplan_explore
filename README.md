@@ -61,4 +61,4 @@ look_ahead_pt_array.shape # (frames, features)
 
 ### mini
 
-![scenario_distribution]()![Scenario_distribution](/home/gac/Downloads/Scenario_distribution.png)
+![Scenario_distribution](./docs/Scenario_distribution.png)
