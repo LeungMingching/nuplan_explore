@@ -224,7 +224,9 @@ def process(
     db_files: str,
     map_version: str,
     past_time_horizon: float,
-    future_time_horizon: float
+    future_time_horizon: float,
+    roi_radius: float,
+    num_objects: int
 ) -> None:
     
     # get all scenarios
@@ -253,7 +255,7 @@ def process(
             scenario = get_default_scenario_from_token(data_root, log_db_file, token, map_root, map_version)
 
             ego_state = construct_ego_current_state(scenario)
-            objects_state = construct_objects_current_state(scenario, ego_state, 1000, 10)
+            objects_state = construct_objects_current_state(scenario, ego_state, roi_radius, num_objects)
             ego_state = np.expand_dims(ego_state, axis=0)
             observation = np.concatenate((ego_state, objects_state), axis=0)
             observation_list.append(observation)
@@ -277,6 +279,8 @@ if __name__ == '__main__':
 
     past_time_horizon = 5
     future_time_horizon = 5
+    roi_radius = 1000
+    num_objects = 100
 
     process(
         DATA_ROOT,
@@ -284,5 +288,7 @@ if __name__ == '__main__':
         DB_FILES,
         MAP_VERSION,
         past_time_horizon,
-        future_time_horizon
+        future_time_horizon,
+        roi_radius,
+        num_objects
     )
