@@ -23,7 +23,7 @@ nuplan_explore
 
 ### Input
 
-![input](/home/gac/nuplan_explore/docs/input.svg)
+![input](./docs/input.svg)
 
 ```python
 # load input file
@@ -44,7 +44,7 @@ observation.shape # (frames, objects, features)
 
 ### Output
 
-![output](/home/gac/nuplan_explore/docs/output.svg)
+![output](./docs/output.svg)
 
 ```python
 # load ouput file
