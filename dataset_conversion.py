@@ -197,8 +197,8 @@ def construct_objects_current_state(
         future_velocity_x = objects_future_state[idx_future_obj].velocity.x
         future_velocity_y = objects_future_state[idx_future_obj].velocity.y
 
-        acceleration_x = (future_velocity_x - prev_velocity_x) / t_interval
-        acceleration_y = (future_velocity_y - prev_velocity_y) / t_interval
+        acceleration_x = (future_velocity_x - prev_velocity_x) / 2*t_interval
+        acceleration_y = (future_velocity_y - prev_velocity_y) / 2*t_interval
 
         objects_current_info[i][5] = acceleration_x
         objects_current_info[i][6] = acceleration_y
