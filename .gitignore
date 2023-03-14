@@ -1,10 +1,11 @@
+*.pyc
 *.bkp
 
 .DS_Store
 .ipynb_checkpoints/
 
 dataset/
-converted_dataset/
+converted_dataset*
 
 nuplan/
 nuplan-devkit/
