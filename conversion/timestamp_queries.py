@@ -1,5 +1,6 @@
 import os
 from query_session import execute_many, execute_one
+from utils import quaternion_to_euler
 
 def get_all_timestamps_from_db(log_file: str) -> list:
     query = """
@@ -32,14 +33,13 @@ def get_ego_state_by_timestamp_from_db(log_file: str, timestamp: str) -> dict:
     row = execute_one(query, [str(timestamp)], log_file)
     if row is None:
         return None
+    
+    _, _, heading = quaternion_to_euler(row['qx'], row['qy'], row['qz'], row['qw'])
 
     ego_pose = {
         'x': row['x'],
         'y': row['y'],
-        'qw': row['qw'],
-        'qx': row['qx'],
-        'qy': row['qy'],
-        'qz': row['qz'],
+        'heading': heading,
         'vx': row['vx'],
         'vy': row['vy'],
         'ax': row['acceleration_x'],
@@ -79,7 +79,7 @@ def get_agents_by_timestamp_from_db(log_file: str, timestamp: str) -> dict:
             'vx': row['vx'],
             'vy': row['vy'],
             'vz': row['vz'],
-            'yaw': row['yaw'],
+            'heading': row['yaw'],
             'name': row['name']
         }
     return agents_dict
