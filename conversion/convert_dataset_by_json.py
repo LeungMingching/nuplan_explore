@@ -154,13 +154,12 @@ def main(config):
             start_timestamp = index_dict['clip_head']['timestamp']
             end_timestamp = index_dict['clip_tail']['timestamp']
 
-            # TODO: build_observation_between_timestamps()
+            # TODO: get_observation_timestamp_range()
             db_timestamp_array = np.array(get_all_timestamps_from_db(log_db_file))
             db_timestamp_array.sort()
-
-            # observation
             idx_obs_start = find_nearest_idx(db_timestamp_array, start_timestamp + past_time_horizon*1e6) + 1 # +1 to calculate acceleration
             idx_obs_end = find_nearest_idx(db_timestamp_array, end_timestamp - future_time_horizon*1e6)
+            # TODO: build_observation_between_timestamps()
             observation_list = []
             # loop all frames within a clip
             for idx in range(idx_obs_start, idx_obs_end):
@@ -175,6 +174,7 @@ def main(config):
                 observation_list.append(observation)
             observation_list = np.asarray(observation_list)
             
+            # TODO: get_look_ahead_pt_timestamp_range()
             # TODO: build_observation_between_timestamps()
             # look ahead point
             look_ahead_pt_list = []
