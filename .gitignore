@@ -4,8 +4,8 @@
 .DS_Store
 .ipynb_checkpoints/
 
+**/DATA
 dataset/
 converted_dataset*
 
 nuplan/
-nuplan-devkit/
