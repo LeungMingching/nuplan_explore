@@ -7,7 +7,7 @@ from timestamp_queries import *
 from utils import *
 
 config = {
-    'db_root': '/home/gac/nuplan_explore/nuplan/dataset/nuplan-v1.1/mini',
+    'db_root': '/home/gac/nuplan_explore/nuplan/dataset/nuplan-v1.1/whole',
     'json_root': '/home/gac/nuplan_explore/nuplan-devkit/tutorials/DATA',
     'coverted_root': './converted_dataset_by_json',
     'past_time_horizon': 0, # past agent traj not supported yet
@@ -18,6 +18,8 @@ config = {
 
 def discover_labels(index_dir):
     sub_folders = [name for name in os.listdir(index_dir) if os.path.isdir(os.path.join(index_dir, name))]
+    sub_folders.sort()
+    print(f'Label list: {sub_folders}')
     return sub_folders
 
 def align_length(array1, array2):
@@ -201,6 +203,21 @@ def build_look_ahead_pt_between_timestamps(
         look_ahead_pt_list.append(look_ahead_pt)
     return np.asarray(look_ahead_pt_list)
 
+def build_instruction_between_timestamps(
+    label,
+    label_list,
+    timestamp_array
+):
+    assert label in label_list, 'Invalid label.'
+
+    num_label = len(label_list)
+    num_timestamp = len(timestamp_array)
+    idx = np.where(np.asarray(label_list) == label)
+    instruction_array = np.zeros((num_timestamp, num_label))
+    instruction_array[:, idx] = 1
+
+    return instruction_array
+
 def extract_data_by_json(
     log_db_file,
     clip_start_timestamp,
@@ -208,7 +225,9 @@ def extract_data_by_json(
     past_time_horizon,
     future_time_horizon,
     roi_radius,
-    num_objects
+    num_objects,
+    label,
+    label_list
 ):
     # observation
     observation_timestamp_range = get_observation_timestamp_range(
@@ -222,11 +241,15 @@ def extract_data_by_json(
     look_ahead_pt_array = build_look_ahead_pt_between_timestamps(
         log_db_file, look_ahead_pt_timestamp_range)
     
+    # instruction
+    instruction_timestamp_range = observation_timestamp_range
+    instruction_array = build_instruction_between_timestamps(label, label_list, instruction_timestamp_range)
+    
     # align
     observation_array, look_ahead_pt_array = align_length(observation_array, look_ahead_pt_array)
     assert len(observation_array) == len(look_ahead_pt_array), 'Not equal length'
     
-    return observation_array, look_ahead_pt_array
+    return observation_array, look_ahead_pt_array, instruction_array
 
 def main(config):
     # read config
@@ -262,13 +285,17 @@ def main(config):
             # skip if converted
             observation_file = os.path.join(label_path, f'{clip_start_timestamp}_observation.npy')
             look_ahead_pt_file = os.path.join(label_path, f'{clip_start_timestamp}_look_ahead_pt.npy')
-            if os.path.exists(look_ahead_pt_file):
+            instruction_file = os.path.join(label_path, f'{clip_start_timestamp}_instruction.npy')
+            if os.path.exists(observation_file) \
+                and os.path.exists(look_ahead_pt_file) \
+                and os.path.exists(instruction_file):
                 continue
             
             # extract
-            observation_array, look_ahead_pt_array = extract_data_by_json(
+            observation_array, look_ahead_pt_array, instruction_array = extract_data_by_json(
                 log_db_file, clip_start_timestamp, clip_end_timestamp,
-                past_time_horizon, future_time_horizon, roi_radius, num_objects)
+                past_time_horizon, future_time_horizon, roi_radius, num_objects,
+                label, label_list)
 
             toc[label]['frame'] += len(look_ahead_pt_array)
             toc['total_frame'] += len(look_ahead_pt_array)
@@ -277,6 +304,8 @@ def main(config):
                 np.save(f, observation_array)
             with open(look_ahead_pt_file, 'wb') as f:
                 np.save(f, look_ahead_pt_array)
+            with open(instruction_file, 'wb') as f:
+                np.save(f, instruction_array)
 
     toc_path = os.path.join(coverted_root, 'table_of_content.json')
     if not os.path.exists(toc_path):
