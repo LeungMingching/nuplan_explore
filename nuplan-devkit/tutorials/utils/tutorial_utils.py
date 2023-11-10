@@ -1,15 +1,14 @@
+import asyncio
 import itertools
 import logging
 import random
-import os
-import json
 from collections import defaultdict
 from dataclasses import dataclass
-from os.path import join, basename
+from os.path import join
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime
 
+import nest_asyncio
 import numpy as np
 import numpy.typing as npt
 from bokeh.document.document import Document
@@ -19,10 +18,11 @@ from bokeh.layouts import column
 
 from nuplan.common.actor_state.vehicle_parameters import get_pacifica_parameters
 from nuplan.common.maps.nuplan_map.map_factory import NuPlanMapFactory, get_maps_db
+from nuplan.database.nuplan_db.nuplan_db_utils import get_lidarpc_sensor_data
 from nuplan.database.nuplan_db.nuplan_scenario_queries import (
-    get_lidarpc_token_map_name_from_db,
-    get_lidarpc_token_timestamp_from_db,
     get_lidarpc_tokens_with_scenario_tag_from_db,
+    get_sensor_data_token_timestamp_from_db,
+    get_sensor_token_map_name_from_db,
 )
 from nuplan.planning.nuboard.base.data_class import NuBoardFile, SimulationScenarioKey
 from nuplan.planning.nuboard.base.experiment_file_data import ExperimentFileData
@@ -305,6 +305,7 @@ def visualize_scenarios(
             server.unlisten()
             logging.debug("Shut down bokeh server %s running on port %d", server_uuid, bokeh_port)
 
+    start_event_loop_if_needed()
     show(bokeh_app, notebook_url=notebook_url_callback, port=bokeh_port)
 
 
@@ -335,8 +336,8 @@ def get_default_scenario_from_token(
     :param map_version: The map version to use.
     :return: Instantiated scenario object.
     """
-    timestamp = get_lidarpc_token_timestamp_from_db(log_file_full_path, token)
-    map_name = get_lidarpc_token_map_name_from_db(log_file_full_path, token)
+    timestamp = get_sensor_data_token_timestamp_from_db(log_file_full_path, get_lidarpc_sensor_data(), token)
+    map_name = get_sensor_token_map_name_from_db(log_file_full_path, get_lidarpc_sensor_data(), token)
     return NuPlanScenario(
         data_root=data_root,
         log_file_load_path=log_file_full_path,
@@ -378,402 +379,55 @@ def visualize_nuplan_scenarios(
     """
     from IPython.display import clear_output, display
     from ipywidgets import Dropdown, Output
-    from ipywidgets import Button, Layout
-    from ipywidgets import HBox
-    from ipywidgets import Text, Textarea, Label
-    from ipywidgets import interact
-    from ipywidgets import BoundedIntText
-    from ipywidgets import Select
 
     log_db_files = discover_log_dbs(db_files)
 
     scenario_type_token_map = get_scenario_type_token_map(log_db_files)
 
-    # define context type and corresponding id
-    context_dict = {
-                'lane keep' : 0,
-                'lane change towards left' : 1,
-                'lane change towards right' : 2,
-                'nudge from left' : 3,
-                'nudge from right' : 4,
-                'turn left at intersection' : 5,
-                'turn right at intersection' : 6,
-            }
-
-    base_dirs = {
-                'lane keep' : 'lane_keep',
-                'lane change towards left' : 'lane_change_towards_left',
-                'lane change towards right' : 'lane_change_towards_right',
-                'nudge from left' : 'nudge_from_left',
-                'nudge from right' : 'nudge_from_right',
-                'turn left at intersection' : 'turn_left_at_intersection',
-                'turn right at intersection' : 'turn_right_at_intersection',
-            }
-
-
     out = Output()
-    drop_down = Dropdown(description='选择scenario: ', 
-                         options=sorted(scenario_type_token_map.keys()))
-
-    label_frame_scroller = Label("选择db文件: ")
-    btn_next = Button(
-            description='next', 
-            layout=Layout(width='10%', height='30px'), 
-            #layout=Layout(flex='1 1 auto', width='auto', height='30px'),
-            disabled=True,
-            button_style='success')
-
-    btn_prev = Button(
-            description='prev', 
-            layout=Layout(width='10%', height='30px'), 
-            #layout=Layout(flex='1 1 auto', width='auto', height='30px'),
-            disabled=True,
-            button_style='success')
-
-    btn_random = Button(
-            description='random', 
-            layout=Layout(width='10%', height='30px'), 
-            #layout=Layout(flex='1 1 auto', width='auto', height='30px'),
-            disabled=True,
-            button_style='success')
-
-    #text_area = Text(value='', description='当前处理: ')
-    #hbox = HBox([label_frame_scroller, btn_next, btn_prev, text_area])
-    label0 = Label('选择起始帧: ')
-    label1 = Label('当前选中: ')
-    label2 = Label('-', 
-                   flex='1 1 auto',
-                   style=dict(
-                                #font_style='italic',
-                                font_weight='bold',
-                                #font_variant="small-caps",
-                                text_color='red',
-                                text_decoration='underline'
-                             )
-                  )
-    hbox = HBox([label_frame_scroller, btn_next, btn_prev, btn_random, label1, label2])
-
-    #text_int_start = BoundedIntText(value=0, min=0, max=10000, step=1, description='选择FOI: ')
-    text_int_start = BoundedIntText(value=0, 
-                                    min=0, 
-                                    max=5000, 
-                                    step=1, 
-                                    layout=Layout(flex='1 1 auto', width='auto'))
-    text_int_end = BoundedIntText(value=0, 
-                                    min=0, 
-                                    max=5000, 
-                                    step=1,
-                                    layout=Layout(flex='1 1 auto', width='auto'))
-    btn_record = Button(
-            description='record', 
-            #layout=Layout(width='10%', height='30px'), 
-            #layout=Layout(flex='1 1 auto', width='auto'),
-            layout=Layout(flex='1 1 auto', width='30px'),
-            disabled=True,
-            button_style='success')
-
-    '''
-    context_select = Select(options=['lane keep', 'lane change'],
-                            value='lane keep',
-                            description='context',
-                            disabled=False)
-    '''
-    context_desc_list = list(context_dict.keys())
-    '''
-    context_select = Select(options=context_desc_list,
-                            value=context_desc_list[0],
-                            description='context',
-                            disabled=False)
-    txt_hbox = HBox([label0, text_int_start, text_int_end, context_select, btn_record])
-    '''
-    context_dropdown = Dropdown(options=context_desc_list)
-    # set default value of dropdown item
-    context_dropdown.value = context_desc_list[0]
-
-    txt_hbox = HBox([label0, text_int_start, text_int_end, context_dropdown, btn_record])
-
-    label3 = Label('已处理记录: ')
-    label4 = Label('-',
-                   style=dict(
-                                font_weight='bold',
-                                text_color='blue',
-                                text_decoration='underline'
-                             )
-                  )
-    txt_hbox1 = HBox([drop_down, label3, label4])
-
-    # scenario info records
-    current_scenario = None
-    current_scenario_type = None
-    current_log_db_file = None
-    current_token_idx = 0
-    max_num_cur_scenario_tokens = 0
-    total_num_chosen_tokens = 0
-
-    # -----------------------------------
-    def dict_to_json(js_filename, 
-                    origin_scenario_desc,
-                    origin_scenario_token_idx,
-                    context_desc,
-                    context_id,
-                    log_db_file,
-                    token,
-                    clip_head_frm_idx,
-                    clip_head_timestamp,
-                    clip_tail_frm_idx,
-                    clip_tail_timestamp):
-
-        with open(js_filename, 'w') as f:
-            '''
-            eg.
-            dic = {
-                    'origin_scenario_desc' : 'change_lane',
-                    'origin_scenario_token_idx' : 100,
-                    'context' : {
-                                  'desc' : 'turn left',
-                                  'id' : 0
-                                },
-                    'log_db_file' : 'xxx.db',
-                    'token' : '237jgh2424vv',
-                    'clip_head' : {
-                                    'frm_idx' : 0,
-                                    'timestamp' : 1122423435
-                                  },
-                    'clip_tail' : {
-                                    'frm_idx' : 100,
-                                    'timestamp' : 1122450989
-                                  }
-                   }
-            '''
-            dic = {
-                    'origin_scenario_desc' : origin_scenario_desc,
-                    'origin_scenario_token_idx' : origin_scenario_token_idx,
-                    'context' : {
-                                  'desc' : context_desc,
-                                  'id' : context_id
-                                },
-                    'log_db_file' : log_db_file,
-                    'token' : token,
-                    'clip_head' : {
-                                    'frm_idx' : clip_head_frm_idx,
-                                    'timestamp' : clip_head_timestamp
-                                  },
-                    'clip_tail' : {
-                                    'frm_idx' : clip_tail_frm_idx,
-                                    'timestamp' : clip_tail_timestamp
-                                  }
-                   }
-
-            f.write(json.dumps(dic, indent=4))
-
-
-    ###############
-    # move to next
-    ###############
-    def next_click(sender):
-        global current_scenario, current_scenario_type, current_log_db_file, current_token, current_token_idx, max_num_cur_scenario_tokens
-
-        try:
-            with out:
-                clear_output()
-                current_token_idx += 1
-                current_token_idx = current_token_idx if current_token_idx<max_num_cur_scenario_tokens else max_num_cur_scenario_tokens-1
-                log_db_file, token = scenario_type_token_map[current_scenario_type][current_token_idx]
-                scenario = get_default_scenario_from_token(data_root, log_db_file, token, map_root, map_version)
-                visualize_scenario(scenario, bokeh_port=bokeh_port)
-                # update
-                current_scenario = scenario
-                current_log_db_file = log_db_file
-                current_token = token
-                # enable btn_record
-                btn_record.disabled = False
-            #print("scenario: {}, db file idx: {}".format(current_scenario_type, current_token_idx))
-            #text_area.value = "{}, db idx: {}".format(current_scenario_type, current_token_idx)
-            label2.value = "{}, total # tokens: {}, chosen token idx: {}".format(current_scenario_type, max_num_cur_scenario_tokens, current_token_idx)
-
-        except ValueError as ve:
-            # 强行跳过该次token
-            btn_record.disabled = True
-
-
-    ####################
-    # move to previous
-    ####################
-    def prev_click(sender):
-        global current_scenario, current_scenario_type, current_log_db_file, current_token, current_token_idx, max_num_cur_scenario_tokens
-
-        try:
-            with out:
-                clear_output()
-                current_token_idx -= 1
-                current_token_idx = current_token_idx if current_token_idx>=0 else 0
-                log_db_file, token = scenario_type_token_map[current_scenario_type][current_token_idx]
-                scenario = get_default_scenario_from_token(data_root, log_db_file, token, map_root, map_version)
-                visualize_scenario(scenario, bokeh_port=bokeh_port)
-                # update
-                current_scenario = scenario
-                current_log_db_file = log_db_file
-                current_token = token
-                # enable btn_record
-                btn_record.disabled = False
-            #print("scenario: {}, db file idx: {}".format(current_scenario_type, current_token_idx))
-            #text_area.value = "{}, db idx: {}".format(current_scenario_type, current_token_idx)
-            label2.value = "{}, total # tokens: {}, chosen token idx: {}".format(current_scenario_type, max_num_cur_scenario_tokens, current_token_idx)
-
-        except ValueError as ve:
-            # 强行跳过该次token
-            btn_record.disabled = True
-
-
-    ###################
-    # randomly choose
-    ###################
-    def random_click(sender):
-        global current_scenario, current_scenario_type, current_log_db_file, current_token, current_token_idx, max_num_cur_scenario_tokens
-
-        try:
-            with out:
-                clear_output()
-                num_all_tokens = len(scenario_type_token_map[current_scenario_type])
-                random_chosen_token_idx = random.choice(range(num_all_tokens))
-                #log_db_file, token = random.choice(scenario_type_token_map[current_scenario_type])
-                log_db_file, token = scenario_type_token_map[current_scenario_type][random_chosen_token_idx]
-                scenario = get_default_scenario_from_token(data_root, log_db_file, token, map_root, map_version)
-                visualize_scenario(scenario, bokeh_port=bokeh_port)
-
-                # update
-                current_scenario = scenario
-                current_log_db_file = log_db_file
-                current_token = token
-                current_token_idx = random_chosen_token_idx
-                # enable btn_record
-                btn_record.disabled = False
-            #print("scenario: {}, db file idx: {}".format(current_scenario_type, current_token_idx))
-            #text_area.value = "{}, db idx: {}".format(current_scenario_type, current_token_idx)
-            label2.value = "{}, total # tokens: {}, chosen token idx: {}".format(current_scenario_type, max_num_cur_scenario_tokens, current_token_idx)
-
-        except ValueError as ve:
-            # 强行跳过该次token
-            btn_record.disabled = True
-
-
-    #############################
-    # record frames of interest
-    #############################
-    def foi_record_click(sender):
-        global current_scenario, current_scenario_type, current_log_db_file, current_token, current_token_idx, max_num_cur_scenario_tokens
-        global total_num_chosen_tokens
-
-        #context_desc = context_select.value
-        context_desc = context_dropdown.value
-        context_id = context_dict[context_desc]
-        clip_head_frm_idx = text_int_start.value
-        clip_head_timestamp = current_scenario.get_time_point(clip_head_frm_idx).time_us
-        clip_tail_frm_idx = text_int_end.value
-        clip_tail_timestamp = current_scenario.get_time_point(clip_tail_frm_idx).time_us
-
-        base_dir = "./DATA"
-        if not os.path.exists(base_dir):
-            os.mkdir(base_dir)
-
-        save_dir = os.path.join(base_dir, base_dirs[context_desc])
-        if not os.path.exists(save_dir):
-            os.mkdir(save_dir)
-
-        dt = str(datetime.utcnow()).split(' ')
-        js_filename = dt[0]+'_'+dt[1]+".json"
-        js_filepath = os.path.join(save_dir, js_filename)
-
-        dict_to_json(js_filepath, 
-                    current_scenario_type,
-                    current_token_idx,
-                    context_desc,
-                    context_id,
-                    os.path.basename(current_log_db_file),
-                    current_token,
-                    clip_head_frm_idx,
-                    clip_head_timestamp,
-                    clip_tail_frm_idx,
-                    clip_tail_timestamp)
-
-        # 计算记录了几次token("一鱼多吃"算多次)
-        total_num_chosen_tokens += 1
-
-        # disable button
-        btn_record.disabled = True
-
-        label4.value = "{}, recorded token idx: {}, total # records: {}".format(current_scenario_type, current_token_idx, total_num_chosen_tokens)
-        #print("recorded start: {}, end: {}, context: {}".format(text_int_start.value, text_int_end.value, context_select.value))
-
-
-    # --------------------------------------------
-    # event bundle
-    btn_next.on_click(next_click)
-    btn_prev.on_click(prev_click)
-    btn_random.on_click(random_click)
-    btn_record.on_click(foi_record_click)
-
-
-    ###
-    def context_dropdown_handler(change: Any) -> None:
-        """
-        once change detect, enable btn_record
-        """
-        #print("old: {}, new: {}".format(str(change.old), str(change.new)))
-        btn_record.disabled = False
-        
-
+    drop_down = Dropdown(description='Scenario', options=sorted(scenario_type_token_map.keys()))
 
     def scenario_dropdown_handler(change: Any) -> None:
         """
         Dropdown handler that randomly chooses a scenario from the selected scenario type and renders it.
         :param change: Object containing scenario selection.
         """
-        global current_scenario, current_scenario_type, current_log_db_file, current_token, current_token_idx, max_num_cur_scenario_tokens
-        global total_num_chosen_tokens
-
         with out:
             clear_output()
 
-            #logger.info("Randomly rendering a scenario...")
+            logger.info("Randomly rendering a scenario...")
             scenario_type = str(change.new)
-
-            #log_db_file, token = random.choice(scenario_type_token_map[scenario_type])
-            #print('log_db_file: {}, token: {}'.format(log_db_file, token))
-            #print(len(scenario_type_token_map[scenario_type]))
-            max_num_cur_scenario_tokens = len(scenario_type_token_map[scenario_type])
-
-            current_token_idx = 0
-            log_db_file, token = scenario_type_token_map[scenario_type][current_token_idx]
-            #print('log_db_file: {}, token: {}'.format(basename(log_db_file), token))
+            log_db_file, token = random.choice(scenario_type_token_map[scenario_type])
             scenario = get_default_scenario_from_token(data_root, log_db_file, token, map_root, map_version)
+
             visualize_scenario(scenario, bokeh_port=bokeh_port)
-            # update
-            current_scenario = scenario
-            current_scenario_type = scenario_type
-            current_log_db_file = log_db_file
-            current_token = token
-            # 每选定一个场景,后续记录总共记录了几条数据(token)
-            total_num_chosen_tokens = 0
 
-            #print("scenario: {}, db file idx: {}".format(current_scenario_type, current_token_idx))
-            #text_area.value = "{}, db idx: {}".format(current_scenario_type, current_token_idx)
-            label2.value = "{}, total # tokens: {}, chosen token idx: {}".format(current_scenario_type, max_num_cur_scenario_tokens, current_token_idx)
-
-            # enable buttons
-            btn_next.disabled = False
-            btn_prev.disabled = False
-            btn_random.disabled = False
-            btn_record.disabled = False
-
-
-    #display(next_btn)
-    #display(prev_btn)
-    #display(drop_down)
-    display(txt_hbox1)
-    display(hbox)
-    display(txt_hbox)
+    display(drop_down)
     display(out)
     drop_down.observe(scenario_dropdown_handler, names='value')
-    context_dropdown.observe(context_dropdown_handler, names='value')
 
+
+def setup_notebook() -> None:
+    """
+    Code that must be run at the start of every tutorial notebook to:
+        - patch the event loop to allow nesting, eg. so we can run asyncio.run from
+          within a notebook.
+    """
+    nest_asyncio.apply()
+
+
+def start_event_loop_if_needed() -> None:
+    """
+    Starts event loop, if there isn't already one running.
+    Should be called before funcitons that require the event loop to be running (or able
+    to be auto-started) to work (eg. bokeh.show).
+    """
+    try:
+        # Gets the running event loop, starting one in the main thread if none has
+        # been created before.
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        # If an event loop was already created and cleaned up, catch the runtime error
+        # and create a new one.
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
